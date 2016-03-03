@@ -50,9 +50,17 @@ import json
 import logging
 
 from owslib import fes
+from owslib.etree import etree
+from owslib.util import nspath_eval
 from owslib.wfs import WebFeatureService
+from owslib.wps import ComplexDataInput, WebProcessingService
 
 LOGGER = logging.getLogger(__name__)
+
+NAMESPACES = {
+    'gco': 'http://www.isotc211.org/2005/gco',
+    'gmd': 'http://www.isotc211.org/2005/gmd'
+}
 
 
 class WoudcClient(object):
@@ -83,7 +91,10 @@ class WoudcClient(object):
         LOGGER.info('Contacting %s', self.url)
         self.server = WebFeatureService(self.url, '1.1.0',
                                         timeout=self.timeout)
-        """The main WOUDC server"""
+        """The main WOUDC server (WFS instance)"""
+
+        self.wps = self.url.replace('ows', 'wps')
+        """The main WOUDC processing server (WPS instance)"""
 
     def get_station_metadata(self, raw=False):
         """
@@ -284,6 +295,48 @@ class WoudcClient(object):
 
         return feature_collection
 
+    def data_extcsv(self, data):
+        """
+        Peform Format validation against ExtendedCSV data
+
+        :param data: a string representing ExtendedCSV data
+
+        :returns: string of the Qa results XML
+        """
+
+        LOGGER.info('Connecting to WOUDC WPS at %s', self.wps)
+        self.process = WebProcessingService(self.wps)
+
+        inputs = [
+            ('data', ComplexDataInput(data))
+        ]
+
+        result = self.process.execute('data-extcsv', inputs=inputs)
+        _get_wps_result(result)
+
+        return True
+
+    def data_qa(self, data):
+        """
+        Peform Qa against ExtendedCSV data
+
+        :param data: a string representing ExtendedCSV data
+
+        :returns: string of the Qa results XML
+        """
+
+        LOGGER.info('Connecting to WOUDC WPS at %s', self.wps)
+        self.process = WebProcessingService(self.wps)
+
+        inputs = [
+            ('data', ComplexDataInput(data))
+        ]
+
+        result = self.process.execute('data-qa', inputs=inputs)
+        _get_wps_result(result)
+
+        return True
+
     def _get_metadata(self, typename, raw=False):
         """generic design pattern to download WOUDC metadata"""
 
@@ -297,6 +350,20 @@ class WoudcClient(object):
             return features.read()
         LOGGER.info('Emitting GeoJSON features as list')
         return json.loads(features.read())
+
+
+def _get_wps_result(result):
+    """
+    generic design pattern to process WOUDC WPS Data Quality WPS report outputs
+    """
+
+    qa = etree.fromstring(result.processOutputs[0].data[0])
+    xp1 = 'gmd:report/gmd:DQ_FormatConsistency/gmd:result/gmd:DQ_ConformanceResult/gmd:pass/gco:Boolean'  # noqa
+    xp2 = 'gmd:report/gmd:DQ_FormatConsistency/gmd:result/gmd:DQ_ConformanceResult/gmd:explanation/gco:CharacterString'  # noqa
+    passed = qa.find(nspath_eval(xp1, NAMESPACES)).text
+    explanation = qa.find(nspath_eval(xp2, NAMESPACES)).text
+    if passed == 'false':
+        raise ValueError(explanation)
 
 
 def date2string(dateval, direction='begin'):

@@ -51,6 +51,17 @@ from owslib.feature.wfs110 import WebFeatureService_1_1_0
 from pywoudc import WoudcClient, date2string
 
 
+def load_test_data_file(filename):
+    """helper function to open test file regardless of invocation"""
+
+    try:
+        with open('data/{}'.format(filename)) as ff:
+            return ff.read()
+    except IOError:
+        with open('tests/data/{}'.format(filename)) as ff:
+            return ff.read()
+
+
 class WoudcClientTest(unittest.TestCase):
     """Test suite for package pywoudc.WoudcClient"""
 
@@ -175,6 +186,33 @@ class WoudcClientTest(unittest.TestCase):
                          datetime.datetime(2011, 11, 30, 12, 12, 12)),
                          '2011-11-30 12:12:12',
                          'Expected specific date string from datetime object')
+
+    def test_validation_services(self):
+        """test WOUDC WPS processes"""
+
+        # test Extended CSV format validation -- bad input
+        data_value = 'bad data'
+        self.assertRaises(ValueError, self.client.data_extcsv, data_value)
+
+        # test Extended CSV format validation -- good input
+        data_value = load_test_data_file(
+            '19980114.dial.lotard.001.crestech.csv')
+        self.assertTrue(self.client.data_extcsv(data_value),
+                        'Expected valid result')
+
+        # test Data Quality Assessment -- bad input
+        data_value = 'bad data'
+        self.assertRaises(ValueError, self.client.data_qa, data_value)
+
+        # test Data Quality Assessment -- Lidar (unsupported)
+        data_value = load_test_data_file(
+            '19980114.dial.lotard.001.crestech.csv')
+        self.assertRaises(ValueError, self.client.data_qa, data_value)
+
+        # test Extended CSV format validation -- good input
+        data_value = load_test_data_file('19830601.ECC.na.na.MSC.csv')
+        self.assertTrue(self.client.data_qa(data_value),
+                        'Expected successful Qa to be performed')
 
 if __name__ == '__main__':
     unittest.main()
